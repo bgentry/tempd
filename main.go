@@ -21,6 +21,8 @@ const (
 	startBit = 1
 	mode     = embd.SPIMode0
 
+	sampleCount = 5
+
 	maxADCVal = 1023  // maximum value of 10-bit ADC
 	rref      = 10000 // reference resistor resistance in Ohms
 
@@ -67,20 +69,21 @@ func main() {
 }
 
 func getTempF(bus embd.SPIBus, chanNum int) (float64, error) {
-	vals := make([]uint16, 5)
-	for i := 0; i < 5; i++ {
+	vals := make([]uint16, sampleCount)
+	total := 0.0
+	for i := range vals {
 		adcval, err := getRawSensorValue(bus, chanNum)
 		if err != nil {
 			return 0, err
 		}
 		vals[i] = adcval
+		total += float64(adcval)
 	}
-	// TODO(bgentry): average the values
 
-	log.Printf("raw value for chan %d is: %d", chanNum, vals[0])
+	meanVal := total / sampleCount
 
 	// resistance of thermistor rt
-	rt := rref / ((float64(maxADCVal) / float64(vals[0])) - 1)
+	rt := rref / ((float64(maxADCVal) / float64(meanVal)) - 1)
 	log.Printf("rt for chan %d is: %.2f", chanNum, rt)
 
 	tempk := getTempKFromRt(rt)
