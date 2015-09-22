@@ -24,10 +24,15 @@ const (
 	maxADCVal = 1023  // maximum value of 10-bit ADC
 	rref      = 10000 // reference resistor resistance in Ohms
 
-	// constants for Steinhart-hart equation, iGrill probe
-	c1 = 0.7739251279e-3
-	c2 = 2.088025997e-4
-	c3 = 1.154400438e-7
+	// constants for Steinhart-hart equation, iGrill probe, hand-measured
+	c1 = 0.761793296025725e-3
+	c2 = 2.114881554906883e-4
+	c3 = 1.0244107975830052e-7
+
+	// iGrill constants from forum post
+	// c1 = 0.7739251279e-3
+	// c2 = 2.088025997e-4
+	// c3 = 1.154400438e-7
 )
 
 func main() {
@@ -78,11 +83,17 @@ func getTempF(bus embd.SPIBus, chanNum int) (float64, error) {
 	rt := rref / ((float64(maxADCVal) / float64(vals[0])) - 1)
 	log.Printf("rt for chan %d is: %.2f", chanNum, rt)
 
-	//c1 + c2 ln(R) + c3(ln(R))3
-	tempk := 1 / (c1 + c2*math.Log(rt) + c3*(math.Pow(math.Log(rt), 3)))
-	log.Printf("tempk for chan %d is: %2f", chanNum, tempk)
+	tempk := getTempKFromRt(rt)
+	log.Printf("tempk for chan %d is: %.2f", chanNum, tempk)
+	return convertTempKToF(tempk), nil
+}
 
-	return (tempk-273.15)*(9/5) + 32, nil
+func getTempKFromRt(rt float64) float64 {
+	return 1 / (c1 + c2*math.Log(rt) + c3*(math.Pow(math.Log(rt), 3)))
+}
+
+func convertTempKToF(tempk float64) float64 {
+	return (tempk-273.15)*(9.0/5) + 32
 }
 
 // getRawSensorValue returns the analog value at the given channel of the convertor.
