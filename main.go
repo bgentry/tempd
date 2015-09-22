@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"math"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,6 +13,23 @@ import (
 	"golang.org/x/net/context"
 )
 
+const (
+	channel  = 0
+	speed    = 1000000
+	bpw      = 8
+	delay    = 0
+	startBit = 1
+	mode     = embd.SPIMode0
+
+	maxADCVal = 1023  // maximum value of 10-bit ADC
+	rref      = 10000 // reference resistor resistance in Ohms
+
+	// constants for Steinhart-hart equation, iGrill probe
+	c1 = 0.7739251279e-3
+	c2 = 2.088025997e-4
+	c3 = 1.154400438e-7
+)
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	sigch := make(chan os.Signal, 2)
@@ -19,33 +37,64 @@ func main() {
 	go handleSignals(sigch, ctx, cancel)
 
 	log.Println("hello world!")
-	embd.InitGPIO()
-	defer embd.CloseGPIO()
-
-	pin, err := embd.NewDigitalPin("GPIO_5")
-	if err != nil {
-		log.Fatal("opening pin:", err)
+	if err := embd.InitSPI(); err != nil {
+		log.Fatal("initializing SPI:", err)
+		panic(err)
 	}
-	defer resetPin(pin)
+	defer embd.CloseSPI()
+	log.Println("SPI initialized.")
 
-	if err = pin.SetDirection(embd.Out); err != nil {
-		log.Fatal("setting pin direction:", err)
-	}
+	bus := embd.NewSPIBus(mode, channel, speed, bpw, delay)
+	defer bus.Close()
 
-	nextValHigh := true
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(500 * time.Millisecond):
-			if nextValHigh {
-				pin.Write(embd.High)
-			} else {
-				pin.Write(embd.Low)
+		case <-time.After(2 * time.Second):
+			val, err := getTempF(bus, 0)
+			if err != nil {
+				log.Fatal("reading value: ", err)
 			}
-			nextValHigh = !nextValHigh
+			log.Printf("value for chan %d is: %.2f", channel, val)
 		}
 	}
+}
+
+func getTempF(bus embd.SPIBus, chanNum int) (float64, error) {
+	vals := make([]uint16, 5)
+	for i := 0; i < 5; i++ {
+		adcval, err := getRawSensorValue(bus, chanNum)
+		if err != nil {
+			return 0, err
+		}
+		vals[i] = adcval
+	}
+	// TODO(bgentry): average the values
+
+	log.Printf("raw value for chan %d is: %d", chanNum, vals[0])
+
+	// resistance of thermistor rt
+	rt := rref / ((float64(maxADCVal) / float64(vals[0])) - 1)
+	log.Printf("rt for chan %d is: %.2f", chanNum, rt)
+
+	//c1 + c2 ln(R) + c3(ln(R))3
+	tempk := 1 / (c1 + c2*math.Log(rt) + c3*(math.Pow(math.Log(rt), 3)))
+	log.Printf("tempk for chan %d is: %2f", chanNum, tempk)
+
+	return (tempk-273.15)*(9/5) + 32, nil
+}
+
+// getRawSensorValue returns the analog value at the given channel of the convertor.
+func getRawSensorValue(bus embd.SPIBus, chanNum int) (uint16, error) {
+	data := [3]byte{startBit, byte(8+chanNum) << 4, 0}
+
+	var err error
+	err = bus.TransferAndRecieveData(data[:])
+	if err != nil {
+		return 0, err
+	}
+	return uint16(data[1]&0x03)<<8 | uint16(data[2]), nil
 }
 
 func handleSignals(sigch <-chan os.Signal, ctx context.Context, cancel context.CancelFunc) {
@@ -60,11 +109,4 @@ func handleSignals(sigch <-chan os.Signal, ctx context.Context, cancel context.C
 		}
 		cancel()
 	}
-}
-
-func resetPin(pin embd.DigitalPin) {
-	if err := pin.SetDirection(embd.In); err != nil {
-		log.Fatal("resetting pin:", err)
-	}
-	pin.Close()
 }
