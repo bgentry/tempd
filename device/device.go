@@ -40,15 +40,15 @@ func (d *Device) Close() error {
 // ReadSensor returns the analog value of the given channel of the convertor,
 // normalized for the number of bits of resolution. This results in a value
 // in the range [0, 1].
-func (d *Device) ReadSensor(channel int) (float64, error) {
+func (d *Device) ReadSensor(channel uint) (float64, error) {
 	val, err := getRawSensorValue(d.bus, channel)
 	if err != nil {
 		return 0, err
 	}
-	return maxADCVal / float64(val), nil
+	return maxADCVal/float64(val) - 1, nil
 }
 
-func getRawSensorValue(bus embd.SPIBus, chanNum int) (uint16, error) {
+func getRawSensorValue(bus embd.SPIBus, chanNum uint) (uint16, error) {
 	data := [3]byte{startBit, byte(8+chanNum) << 4, 0}
 
 	var err error

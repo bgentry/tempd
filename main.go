@@ -13,13 +13,9 @@ import (
 )
 
 const (
-	spiChannel = 0
-
-	sampleCount = 5
-
-	rref = 10000 // reference resistor resistance in Ohms
-
-	sensorChannel = 9
+	spiChannel  = 0     // which SPI bus channel to use
+	sampleCount = 5     // number of samples per measurement
+	rref        = 10000 // reference resistor resistance in Ohms
 
 	// constants for Steinhart-hart equation, iGrill probe, hand-measured
 	c1 = 0.761793296025725e-3
@@ -55,12 +51,11 @@ func main() {
 			if err != nil {
 				log.Fatal("reading value: ", err)
 			}
-			log.Printf("value for chan %d is: %.2f", sensorChannel, val)
 		}
 	}
 }
 
-func getTempF(dev *device.Device, chanNum int) (float64, error) {
+func getTempF(dev *device.Device, chanNum uint) (float64, error) {
 	vals := make([]float64, sampleCount)
 	for i := range vals {
 		adcval, err := dev.ReadSensor(chanNum)
@@ -70,8 +65,8 @@ func getTempF(dev *device.Device, chanNum int) (float64, error) {
 		vals[i] = adcval
 	}
 
-	// resistance of thermistor rt
-	rt := rref / (mean(vals) - 1)
+	// calculate resistance of thermistor rt as a voltage divider
+	rt := rref / mean(vals)
 	log.Printf("rt for chan %d is: %.2f", chanNum, rt)
 
 	tempk := temperature.SteinhartTemp(c1, c2, c3, rt)
