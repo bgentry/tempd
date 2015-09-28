@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -26,7 +27,13 @@ const (
 	// c1 = 0.7739251279e-3
 	// c2 = 2.088025997e-4
 	// c3 = 1.154400438e-7
+
+	tempChannelID0 = 0
+	tempChannelID1 = 1
+	tempChannelID2 = 2
 )
+
+var tempChannelIDs = []uint{tempChannelID0, tempChannelID1, tempChannelID2}
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -47,13 +54,22 @@ func main() {
 		case <-ctx.Done():
 			return
 		case <-time.After(2 * time.Second):
-			val, err := getTempF(dev, 0)
-			if err != nil {
-				log.Fatal("reading value: ", err)
+			for _, chanID := range tempChannelIDs {
+				val, err := getTempF(dev, chanID)
+				if err != nil {
+					if err == errProbeDisconnected {
+						log.Printf("probe for channel %d is disconnected", chanID)
+						continue
+					}
+					log.Fatal("reading value: ", err)
+				}
+				log.Printf("value for chan %d is: %.2f", chanID, val)
 			}
 		}
 	}
 }
+
+var errProbeDisconnected = errors.New("probe is not connected")
 
 func getTempF(dev *device.Device, chanNum uint) (float64, error) {
 	vals := make([]float64, sampleCount)
@@ -61,6 +77,9 @@ func getTempF(dev *device.Device, chanNum uint) (float64, error) {
 		adcval, err := dev.ReadSensor(chanNum)
 		if err != nil {
 			return 0, err
+		}
+		if adcval == 0 {
+			return 0, errProbeDisconnected
 		}
 		vals[i] = adcval
 	}
