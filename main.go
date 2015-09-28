@@ -49,24 +49,9 @@ func main() {
 	dev := device.New(spiChannel)
 	defer dev.Close()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(2 * time.Second):
-			for _, chanID := range tempChannelIDs {
-				val, err := getTempF(dev, chanID)
-				if err != nil {
-					if err == errProbeDisconnected {
-						log.Printf("probe for channel %d is disconnected", chanID)
-						continue
-					}
-					log.Fatal("reading value: ", err)
-				}
-				log.Printf("value for chan %d is: %.2f", chanID, val)
-			}
-		}
-	}
+	tempch := make(chan tempReading, 5*len(tempChannelIDs))
+	go readTemps(ctx, dev, tempch)
+	reportReadings(tempch)
 }
 
 var errProbeDisconnected = errors.New("probe is not connected")
@@ -107,10 +92,40 @@ func handleSignals(sigch <-chan os.Signal, ctx context.Context, cancel context.C
 	}
 }
 
-func mean(vals []float64) float64 {
-	total := 0.0
-	for _, val := range vals {
-		total += float64(val)
+type tempReading struct {
+	channel     uint
+	temperature float64
+	timestamp   time.Time
+}
+
+func reportReadings(tempch <-chan tempReading) {
+	for reading := range tempch {
+		log.Printf("value for chan %d is: %.2f", reading.channel, reading.temperature)
 	}
-	return total / float64(len(vals))
+}
+
+func readTemps(ctx context.Context, dev *device.Device, tempch chan<- tempReading) {
+	for {
+		select {
+		case <-ctx.Done():
+			close(tempch)
+			return
+		case <-time.After(2 * time.Second):
+			for _, chanID := range tempChannelIDs {
+				val, err := getTempF(dev, chanID)
+				if err != nil {
+					if err == errProbeDisconnected {
+						log.Printf("probe for channel %d is disconnected", chanID)
+						continue
+					}
+					log.Fatal("reading value: ", err)
+				}
+				tempch <- tempReading{
+					timestamp:   time.Now().UTC(),
+					channel:     chanID,
+					temperature: val,
+				}
+			}
+		}
+	}
 }

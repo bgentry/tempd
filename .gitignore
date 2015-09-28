@@ -3,6 +3,7 @@
 *.a
 *.so
 main
+tempd
 
 # Folders
 _obj
