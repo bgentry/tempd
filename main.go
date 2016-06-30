@@ -41,12 +41,10 @@ func main() {
 	signal.Notify(sigch, os.Interrupt, syscall.SIGTERM)
 	go handleSignals(sigch, ctx, cancel)
 
-	if err := device.Init(); err != nil {
-		log.Fatal("initializing device:", err)
+	dev, err := device.Open(spiChannel)
+	if err != nil {
+		log.Fatal(err)
 	}
-	defer device.Close()
-
-	dev := device.New(spiChannel)
 	defer dev.Close()
 
 	tempch := make(chan tempReading, 5*len(tempChannelIDs))
